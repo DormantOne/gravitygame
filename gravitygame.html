@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Space Vessels Game</title>
+    <style>
+        button {
+            padding: 4px 8px;
+            font-size: 12px;
+            margin: 2px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.14.2/matter.min.js"></script>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div>Score: <span id="score">0</span></div>
+    <div>
+        <button onclick="changeSize('red', 1)">+ Red</button>
+        <button onclick="changeSize('red', -1)">- Red</button>
+        <button onclick="changeSize('blue', 1)">+ Blue</button>
+        <button onclick="changeSize('blue', -1)">- Blue</button>
+        <button onclick="changeSize('green', 1)">+ Green</button>
+        <button onclick="changeSize('green', -1)">- Green</button>
+    </div>
+    <script>
+        var canvas = document.getElementById("gameCanvas");
+        var ctx = canvas.getContext('2d');
+        var scoreElement = document.getElementById("score");
+        canvas.width = 800;
+        canvas.height = 600;
+
+        var engine = Matter.Engine.create();
+        engine.world.gravity.y = 0; // Disable default gravity
+        var render = Matter.Render.create({
+            canvas: canvas,
+            engine: engine,
+            options: {
+                width: 800,
+                height: 600,
+                wireframes: false
+            }
+        });
+
+        // Sizes and masses for vessels
+        const sizes = [4, 8, 12, 16, 20]; // Tiny, Small, Middle, Big, Large
+        const masses = [10, 20, 50, 100, 200]; // Corresponding masses
+
+        function createVessel(x, y, index, color) {
+            var radius = sizes[index];
+            var velocity = { x: Math.random() * 2 - 1, y: Math.random() * 2 - 1 };
+            var options = {
+                mass: masses[index],
+                restitution: 1,
+                render: { fillStyle: color },
+                frictionAir: 0
+            };
+            var body = Matter.Bodies.circle(x, y, radius, options);
+            Matter.Body.setVelocity(body, velocity);
+            body.sizeIndex = index; // Track size index on the body
+            return body;
+        }
+
+        var vesselRed = createVessel(400, 300, 2, 'red');
+        var vesselBlue = createVessel(300, 300, 2, 'blue');
+        var vesselGreen = createVessel(500, 300, 2, 'green');
+
+        Matter.World.add(engine.world, [vesselRed, vesselBlue, vesselGreen]);
+        Matter.Engine.run(engine);
+        Matter.Render.run(render);
+
+        // Apply gravity on each frame update
+        Matter.Events.on(engine, 'beforeUpdate', function() {
+            applyGravity(vesselRed, vesselBlue);
+            applyGravity(vesselRed, vesselGreen);
+            applyGravity(vesselBlue, vesselGreen);
+        });
+
+        function applyGravity(bodyA, bodyB) {
+            const G = 0.0005; // Gravitational constant
+            let dx = bodyA.position.x - bodyB.position.x;
+            let dy = bodyA.position.y - bodyB.position.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            let forceMagnitude = G * bodyA.mass * bodyB.mass / (distance * distance);
+            let forceX = forceMagnitude * dx / distance;
+            let forceY = forceMagnitude * dy / distance;
+            Matter.Body.applyForce(bodyA, bodyA.position, { x: -forceX, y: -forceY });
+            Matter.Body.applyForce(bodyB, bodyB.position, { x: forceX, y: forceY });
+        }
+
+        function changeSize(color, delta) {
+            var vessel;
+            switch (color) {
+                case 'red': vessel = vesselRed; break;
+                case 'blue': vessel = vesselBlue; break;
+                case 'green': vessel = vesselGreen; break;
+            }
+
+            var newIndex = Math.max(0, Math.min(vessel.sizeIndex + delta, sizes.length - 1));
+            if (newIndex === vessel.sizeIndex) return; // No change
+
+            // Calculate the new velocity to conserve momentum
+            var oldMomentum = { x: vessel.velocity.x * vessel.mass, y: vessel.velocity.y * vessel.mass };
+            var newMass = masses[newIndex];
+            var newVelocity = {
+                x: oldMomentum.x / newMass,
+                y: oldMomentum.y / newMass
+            };
+
+            // Create new vessel with updated properties but consistent direction
+            var newVessel = createVessel(vessel.position.x, vessel.position.y, newIndex, vessel.render.fillStyle);
+            Matter.World.remove(engine.world, vessel); // Remove old vessel
+            Matter.World.add(engine.world, newVessel); // Add new vessel
+            Matter.Body.setVelocity(newVessel, newVelocity); // Set velocity to conserve momentum
+
+            // Update reference based on color
+            switch (color) {
+                case 'red': vesselRed = newVessel; break;
+                case 'blue': vesselBlue = newVessel; break;
+                case 'green': vesselGreen = newVessel; break;
+            }
+        }
+
+        // Score calculation
+        var score = 0;
+        setInterval(function() {
+            var visibleVessels = [vesselRed, vesselBlue, vesselGreen].filter(isOnScreen);
+            var netSpeed = visibleVessels.reduce(function(sum, vessel) {
+                return sum + Math.sqrt(vessel.velocity.x ** 2 + vessel.velocity.y ** 2);
+            }, 0);
+            if (visibleVessels.length >= 2) {
+                score += netSpeed; // Update score based on net speed
+                scoreElement.innerText = Math.round(score); // Display rounded score
+            }
+        }, 1000); // Update score every second
+
+        function isOnScreen(vessel) {
+            return vessel.position.x > 0 && vessel.position.x < canvas.width &&
+                   vessel.position.y > 0 && vessel.position.y < canvas.height;
+        }
+    </script>
+</body>
+</html>
